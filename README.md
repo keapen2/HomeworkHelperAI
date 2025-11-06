@@ -1,0 +1,2 @@
+# HomeworkHelperAI
+CS Project
