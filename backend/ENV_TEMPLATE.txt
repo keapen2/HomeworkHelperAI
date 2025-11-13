@@ -1,0 +1,13 @@
+# Copy this content to your .env file
+# Location: backend/.env
+
+# For MVP Demo (without MongoDB - uses mock data):
+PORT=8000
+
+# For Real Data (with MongoDB Atlas):
+# Uncomment and fill in your MongoDB Atlas connection string:
+# MONGO_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/homeworkhelper?retryWrites=true&w=majority
+
+# Firebase Admin SDK (Optional - only if you want full authentication):
+# FIREBASE_ADMIN_SDK_KEY_PATH=./config/firebase-service-account.json
+
