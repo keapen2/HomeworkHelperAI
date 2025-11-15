@@ -1,17 +1,14 @@
 // routes/student.routes.js
-// These are stub endpoints for context with other team members' features
+// Student endpoints for question submission and AI generation
 
 const express = require('express');
 const router = express.Router();
+const { generateAIResponse } = require('../controllers/ai.controller');
 
-// CONTEXT: Oluwakunmi's feature will use this
-router.post('/question', (req, res) => {
-  res.status(201).json({ message: 'STUB: AI question submitted' });
-  // TODO: This endpoint will eventually:
-  // 1. Take `text` and `subject` from req.body
-  // 2. Call OpenAI API
-  // 3. Save to MongoDB 'questions' collection, which feeds the admin dashboards
-});
+// AI question submission endpoint
+// POST /api/student/question
+// Body: { text: string, subject: string, topic?: string, studentId?: string }
+router.post('/question', generateAIResponse);
 
 // CONTEXT: Kanda's feature will use this
 router.post('/question/:id/upvote', (req, res) => {

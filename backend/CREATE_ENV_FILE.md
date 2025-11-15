@@ -26,6 +26,7 @@ PORT=8000
 ```env
 MONGO_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/homeworkhelper?retryWrites=true&w=majority
 PORT=8000
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
 **Replace**:
@@ -48,6 +49,10 @@ MONGO_URI=mongodb+srv://admin:admin123@cluster0.abc123.mongodb.net/homeworkhelpe
 
 # Server Port
 PORT=8000
+
+# OpenAI API Key (Required for AI question generation)
+# Get your API key from: https://platform.openai.com/api-keys
+OPENAI_API_KEY=sk-your-openai-api-key-here
 
 # Firebase Admin SDK (Optional - only if you want full auth)
 # FIREBASE_ADMIN_SDK_KEY_PATH=./config/firebase-service-account.json
