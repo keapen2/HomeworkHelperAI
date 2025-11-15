@@ -9,14 +9,20 @@ import {
   RefreshControl,
   ScrollView,
   TouchableOpacity,
-  TextInput
+  TextInput,
+  Modal
 } from 'react-native';
 import { auth } from '../config/firebase';
 import axios from 'axios';
 import API_URL from '../config/api';
 import DetailModal from '../components/DetailModal';
+import { useTheme } from '../context/ThemeContext';
+import { Dimensions } from 'react-native';
+
+const screenWidth = Dimensions.get('window').width;
 
 export default function UsageTrendsScreen() {
+  const theme = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -26,9 +32,14 @@ export default function UsageTrendsScreen() {
   const [selectedStatCard, setSelectedStatCard] = useState(null);
   
   // Filter states
-  const [dateRange, setDateRange] = useState('7days'); // '7days', '30days', 'all'
+  const [dateRange, setDateRange] = useState('7days'); // '7days', '30days', 'all', 'custom'
   const [category, setCategory] = useState('all'); // 'all', 'Math', 'Science', 'English', 'History'
   const [searchQuery, setSearchQuery] = useState(''); // Search input
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  const [customEndDate, setCustomEndDate] = useState(new Date());
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
   
   // Sort states
   const [struggleSortBy, setStruggleSortBy] = useState('studentCount'); // 'studentCount', 'alphabetical'
@@ -54,7 +65,13 @@ export default function UsageTrendsScreen() {
 
       // Build query params with filters
       const params = new URLSearchParams();
-      if (dateRange) params.append('dateRange', dateRange);
+      if (dateRange === 'custom') {
+        // For custom dates, send start and end dates
+        params.append('startDate', customStartDate.toISOString().split('T')[0]);
+        params.append('endDate', customEndDate.toISOString().split('T')[0]);
+      } else if (dateRange) {
+        params.append('dateRange', dateRange);
+      }
       if (category && category !== 'all') params.append('category', category);
       if (searchQuery && searchQuery.trim() !== '') params.append('search', searchQuery.trim());
 
@@ -71,16 +88,34 @@ export default function UsageTrendsScreen() {
         console.error('Failed to fetch usage trends:', error.response?.data || error.message);
       }
       // Always set mock data on error - backend should return mock data too
+      // Apply filters to mock data
+      const mockStruggles = [
+        { topic: 'Calculus Derivatives', studentCount: 250, category: 'Math' },
+        { topic: 'Biology', studentCount: 200, category: 'Science' },
+        { topic: 'Algebra', studentCount: 150, category: 'Math' },
+        { topic: 'World War I', studentCount: 180, category: 'History' },
+        { topic: 'Grammar', studentCount: 120, category: 'English' }
+      ];
+
+      let filteredMockStruggles = mockStruggles;
+
+      // Filter by category if not 'all'
+      if (category && category !== 'all') {
+        filteredMockStruggles = mockStruggles.filter(s => s.category === category);
+      }
+
+      // Filter by search query
+      if (searchQuery && searchQuery.trim() !== '') {
+        const query = searchQuery.toLowerCase().trim();
+        filteredMockStruggles = filteredMockStruggles.filter(s => 
+          s.topic.toLowerCase().includes(query)
+        );
+      }
+
       setData({
         activeStudents: 3,
         avgAccuracy: 85,
-        commonStruggles: [
-          { topic: 'Calculus Derivatives', studentCount: 250 },
-          { topic: 'Biology', studentCount: 200 },
-          { topic: 'Algebra', studentCount: 150 },
-          { topic: 'World War I', studentCount: 180 },
-          { topic: 'Grammar', studentCount: 120 }
-        ]
+        commonStruggles: filteredMockStruggles
       });
     } finally {
       setLoading(false);
@@ -97,10 +132,12 @@ export default function UsageTrendsScreen() {
     fetchData();
   };
 
+  const styles = getStyles(theme);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6B46C1" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={styles.loadingText}>Loading usage trends...</Text>
       </View>
     );
@@ -109,6 +146,7 @@ export default function UsageTrendsScreen() {
   return (
     <ScrollView 
       style={styles.container}
+      contentContainerStyle={styles.contentContainer}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
@@ -144,7 +182,22 @@ export default function UsageTrendsScreen() {
                 All Time
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButton, dateRange === 'custom' && styles.filterButtonActive]}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={[styles.filterButtonText, dateRange === 'custom' && styles.filterButtonTextActive]}>
+                Custom
+              </Text>
+            </TouchableOpacity>
           </View>
+          {dateRange === 'custom' && (
+            <View style={styles.customDateDisplay}>
+              <Text style={styles.customDateText}>
+                {customStartDate.toLocaleDateString()} - {customEndDate.toLocaleDateString()}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Category Filter */}
@@ -221,7 +274,6 @@ export default function UsageTrendsScreen() {
             </View>
           </View>
           <Text style={styles.statSubtext}>Last 24 hours</Text>
-          <Text style={styles.tapHint}>Tap for details</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
@@ -238,7 +290,6 @@ export default function UsageTrendsScreen() {
             </View>
           </View>
           <Text style={styles.statSubtext}>Overall performance</Text>
-          <Text style={styles.tapHint}>Tap for details</Text>
         </TouchableOpacity>
       </View>
 
@@ -247,9 +298,15 @@ export default function UsageTrendsScreen() {
         <TextInput
           style={styles.searchInput}
           placeholder="Search topics..."
-          placeholderTextColor="#999"
+          placeholderTextColor={theme.colors.textTertiary}
           value={searchQuery}
           onChangeText={setSearchQuery}
+          onSubmitEditing={() => {
+            // Trigger refetch when user presses Enter
+            fetchData();
+          }}
+          returnKeyType="search"
+          blurOnSubmit={true}
         />
       </View>
 
@@ -435,72 +492,241 @@ export default function UsageTrendsScreen() {
           </>
         )}
       </DetailModal>
+
+      {/* Custom Date Range Picker Modal */}
+      <Modal
+        visible={showDatePicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <View style={styles.datePickerOverlay}>
+          <View style={styles.datePickerContent}>
+            <View style={styles.datePickerHeader}>
+              <Text style={styles.datePickerTitle}>Select Date Range</Text>
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(false)}
+                style={styles.datePickerCloseButton}
+              >
+                <Text style={styles.datePickerCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.datePickerBody}>
+              <View style={styles.datePickerField}>
+                <Text style={styles.datePickerLabel}>Start Date</Text>
+                <TouchableOpacity
+                  style={styles.datePickerButton}
+                  onPress={() => setShowStartPicker(true)}
+                >
+                  <Text style={styles.datePickerButtonText}>
+                    {customStartDate.toLocaleDateString()}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.datePickerField}>
+                <Text style={styles.datePickerLabel}>End Date</Text>
+                <TouchableOpacity
+                  style={styles.datePickerButton}
+                  onPress={() => setShowEndPicker(true)}
+                >
+                  <Text style={styles.datePickerButtonText}>
+                    {customEndDate.toLocaleDateString()}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.datePickerApplyButton}
+                onPress={() => {
+                  setDateRange('custom');
+                  setShowDatePicker(false);
+                }}
+              >
+                <Text style={styles.datePickerApplyText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* Date Pickers */}
+        {(showStartPicker || showEndPicker) && (
+          <View style={styles.datePickerOverlay}>
+            <View style={styles.datePickerContent}>
+              <Text style={styles.datePickerTitle}>
+                {showStartPicker ? 'Select Start Date' : 'Select End Date'}
+              </Text>
+              
+              {/* Simple date input */}
+              <View style={styles.dateInputContainer}>
+                <Text style={styles.dateInputLabel}>Year</Text>
+                <TextInput
+                  style={styles.dateInput}
+                  keyboardType="number-pad"
+                  placeholder="2024"
+                  value={showStartPicker 
+                    ? customStartDate.getFullYear().toString() 
+                    : customEndDate.getFullYear().toString()}
+                  onChangeText={(text) => {
+                    const date = showStartPicker ? customStartDate : customEndDate;
+                    const newDate = new Date(date);
+                    newDate.setFullYear(parseInt(text) || date.getFullYear());
+                    if (showStartPicker) {
+                      setCustomStartDate(newDate);
+                    } else {
+                      setCustomEndDate(newDate);
+                    }
+                  }}
+                />
+              </View>
+
+              <View style={styles.dateInputRow}>
+                <View style={styles.dateInputContainer}>
+                  <Text style={styles.dateInputLabel}>Month</Text>
+                  <TextInput
+                    style={styles.dateInput}
+                    keyboardType="number-pad"
+                    placeholder="1-12"
+                    value={showStartPicker 
+                      ? (customStartDate.getMonth() + 1).toString() 
+                      : (customEndDate.getMonth() + 1).toString()}
+                    onChangeText={(text) => {
+                      const date = showStartPicker ? customStartDate : customEndDate;
+                      const newDate = new Date(date);
+                      newDate.setMonth((parseInt(text) || date.getMonth() + 1) - 1);
+                      if (showStartPicker) {
+                        setCustomStartDate(newDate);
+                      } else {
+                        setCustomEndDate(newDate);
+                      }
+                    }}
+                  />
+                </View>
+
+                <View style={styles.dateInputContainer}>
+                  <Text style={styles.dateInputLabel}>Day</Text>
+                  <TextInput
+                    style={styles.dateInput}
+                    keyboardType="number-pad"
+                    placeholder="1-31"
+                    value={showStartPicker 
+                      ? customStartDate.getDate().toString() 
+                      : customEndDate.getDate().toString()}
+                    onChangeText={(text) => {
+                      const date = showStartPicker ? customStartDate : customEndDate;
+                      const newDate = new Date(date);
+                      newDate.setDate(parseInt(text) || date.getDate());
+                      if (showStartPicker) {
+                        setCustomStartDate(newDate);
+                      } else {
+                        setCustomEndDate(newDate);
+                      }
+                    }}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.datePickerButtonRow}>
+                <TouchableOpacity
+                  style={styles.datePickerCancelButton}
+                  onPress={() => {
+                    setShowStartPicker(false);
+                    setShowEndPicker(false);
+                  }}
+                >
+                  <Text style={styles.datePickerCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.datePickerConfirmButton}
+                  onPress={() => {
+                    setShowStartPicker(false);
+                    setShowEndPicker(false);
+                  }}
+                >
+                  <Text style={styles.datePickerConfirmText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+      </Modal>
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.colors.background,
+  },
+  contentContainer: {
+    paddingBottom: theme.spacing.xl,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.colors.background,
   },
   loadingText: {
-    marginTop: 10,
-    color: '#666',
+    marginTop: theme.spacing.sm,
+    color: theme.colors.textSecondary,
+    fontSize: 15,
+    textShadowColor: theme.isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'transparent',
+    textShadowOffset: theme.isDarkMode ? { width: 0, height: 1 } : { width: 0, height: 0 },
+    textShadowRadius: theme.isDarkMode ? 2 : 0,
   },
   header: {
-    padding: 20,
-    paddingTop: 30,
-    paddingBottom: 20,
-    backgroundColor: '#6B46C1', // Purple header
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xl,
+    paddingBottom: theme.spacing.lg,
+    backgroundColor: theme.colors.header,
     borderBottomWidth: 0,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff', // White text on purple
-    marginBottom: 15,
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: theme.spacing.md,
+    letterSpacing: -0.5,
   },
   filterContainer: {
-    marginBottom: 12,
+    marginBottom: theme.spacing.md,
   },
   filterLabel: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#fff',
-    marginBottom: 8,
+    marginBottom: theme.spacing.sm,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
   filterButtons: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
   filterButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
-    marginRight: 8,
-    marginBottom: 8,
+    marginRight: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
   },
   filterButtonActive: {
     backgroundColor: '#fff',
     borderColor: '#fff',
   },
   filterButtonText: {
-    fontSize: 12,
+    fontSize: 13,
     color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: '600',
+    letterSpacing: 0.1,
   },
   filterButtonTextActive: {
-    color: '#6B46C1',
+    color: theme.colors.primary,
   },
   clearFiltersContainer: {
     marginTop: 12,
@@ -527,22 +753,18 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    padding: 20,
-    margin: 5,
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    padding: theme.spacing.lg,
+    margin: theme.spacing.xs,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
     alignItems: 'center',
-    shadowColor: '#000',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     elevation: 3,
-  },
-  tapHint: {
-    fontSize: 10,
-    color: '#999',
-    marginTop: 8,
-    fontStyle: 'italic',
   },
   modalStatBox: {
     backgroundColor: '#F3E8FF', // Light purple background
@@ -603,8 +825,11 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 14,
-    color: '#666',
+    color: theme.isDarkMode ? theme.colors.textSecondary : '#666',
     marginBottom: 8,
+    textShadowColor: theme.isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'transparent',
+    textShadowOffset: theme.isDarkMode ? { width: 0, height: 0.5 } : { width: 0, height: 0 },
+    textShadowRadius: theme.isDarkMode ? 2 : 0,
   },
   statNumberContainer: {
     flexDirection: 'row',
@@ -613,66 +838,77 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   statNumber: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#A78BFA', // Light purple for numbers
+    fontSize: 36,
+    fontWeight: '700',
+    color: theme.colors.primary,
     marginRight: 8,
+    textShadowColor: theme.isDarkMode ? 'rgba(0, 0, 0, 0.9)' : 'transparent',
+    textShadowOffset: theme.isDarkMode ? { width: 0, height: 1 } : { width: 0, height: 0 },
+    textShadowRadius: theme.isDarkMode ? 3 : 0,
   },
   trendIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E6F9E6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   trendDown: {
-    backgroundColor: '#FFE6E6',
+    backgroundColor: '#FEF2F2',
   },
   trendArrow: {
-    fontSize: 14,
-    color: '#22C55E',
+    fontSize: 12,
+    color: '#10B981',
     marginRight: 2,
+    fontWeight: '600',
   },
   trendArrowDown: {
     color: '#EF4444',
   },
   trendText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    color: '#22C55E',
+    color: '#10B981',
   },
   trendTextDown: {
     color: '#EF4444',
   },
   statSubtext: {
     fontSize: 12,
-    color: '#999',
+    color: theme.isDarkMode ? theme.colors.textTertiary : '#999',
+    textShadowColor: theme.isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'transparent',
+    textShadowOffset: theme.isDarkMode ? { width: 0, height: 0.5 } : { width: 0, height: 0 },
+    textShadowRadius: theme.isDarkMode ? 2 : 0,
   },
   searchContainer: {
-    paddingHorizontal: 20,
-    marginVertical: 15,
+    paddingHorizontal: theme.spacing.lg,
+    marginVertical: theme.spacing.md,
   },
   searchInput: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    backgroundColor: theme.colors.inputBackground,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    color: '#333',
+    borderColor: theme.colors.inputBorder,
+    color: theme.colors.text,
   },
   sectionHeaderContainer: {
-    marginHorizontal: 20,
-    marginTop: 10,
-    marginBottom: 15,
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.md,
   },
   sectionHeader: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#6B46C1', // Purple section headers
-    marginBottom: 10,
+    fontSize: 22,
+    fontWeight: '700',
+    color: theme.colors.primary,
+    marginBottom: theme.spacing.sm,
+    letterSpacing: -0.3,
+    textShadowColor: theme.isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'transparent',
+    textShadowOffset: theme.isDarkMode ? { width: 0, height: 1 } : { width: 0, height: 0 },
+    textShadowRadius: theme.isDarkMode ? 3 : 0,
   },
   sortContainer: {
     marginTop: 8,
@@ -707,15 +943,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 15,
-    marginHorizontal: 10,
-    marginVertical: 5,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    shadowColor: '#000',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    marginHorizontal: theme.spacing.md,
+    marginVertical: 3,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
     elevation: 2,
   },
   listItemLeft: {
@@ -725,19 +964,23 @@ const styles = StyleSheet.create({
   },
   listItemNumber: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#6B46C1', // Purple for list numbers
-    marginRight: 12,
+    fontWeight: '700',
+    color: theme.colors.primary,
+    marginRight: theme.spacing.md,
     minWidth: 24,
   },
   listItemText: {
     fontSize: 16,
-    color: '#333',
+    color: theme.colors.text,
     flex: 1,
+    letterSpacing: -0.2,
+    textShadowColor: theme.isDarkMode ? 'rgba(0, 0, 0, 0.7)' : 'transparent',
+    textShadowOffset: theme.isDarkMode ? { width: 0, height: 0.5 } : { width: 0, height: 0 },
+    textShadowRadius: theme.isDarkMode ? 2 : 0,
   },
   listItemCount: {
     fontSize: 14,
-    color: '#666',
+    color: theme.isDarkMode ? theme.colors.textSecondary : '#666',
     fontWeight: '600',
   },
   emptyContainer: {
@@ -746,7 +989,163 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#999',
+    color: theme.colors.textTertiary,
+    textAlign: 'center',
+    textShadowColor: theme.isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'transparent',
+    textShadowOffset: theme.isDarkMode ? { width: 0, height: 1 } : { width: 0, height: 0 },
+    textShadowRadius: theme.isDarkMode ? 2 : 0,
+  },
+  customDateDisplay: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  customDateText: {
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  datePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  datePickerContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    width: '90%',
+    maxWidth: 400,
+    padding: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: '#6B46C1',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  datePickerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  datePickerCloseButton: {
+    padding: 5,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  datePickerCloseText: {
+    fontSize: 20,
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  datePickerBody: {
+    padding: 20,
+  },
+  datePickerField: {
+    marginBottom: 20,
+  },
+  datePickerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  datePickerButton: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: '#F9FAFB',
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    color: '#111827',
+    fontWeight: '500',
+  },
+  datePickerApplyButton: {
+    backgroundColor: '#6B46C1',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  datePickerApplyText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  dateInputContainer: {
+    marginBottom: 16,
+  },
+  dateInputRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  dateInputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  dateInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#F9FAFB',
+    fontSize: 16,
+    color: '#111827',
+    textAlign: 'center',
+  },
+  datePickerButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
+  },
+  datePickerCancelButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+  },
+  datePickerCancelText: {
+    color: '#374151',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  datePickerConfirmButton: {
+    flex: 1,
+    backgroundColor: '#6B46C1',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+  },
+  datePickerConfirmText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 

@@ -10,28 +10,72 @@ import { onAuthStateChanged } from 'firebase/auth';
 import AdminLoginScreen from '../screens/AdminLoginScreen';
 import UsageTrendsScreen from '../screens/UsageTrendsScreen';
 import SystemDashboardScreen from '../screens/SystemDashboardScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import { signOut } from 'firebase/auth';
+import { TouchableOpacity, Text } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function DashboardTabs() {
+  const theme = useTheme();
+  
   // This is the Tab Navigator from wireframes
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
   return (
     <Tab.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: true,
         headerTitle: 'HomeworkHelper AI',
         headerStyle: {
-          backgroundColor: '#6B46C1', // Purple header
+          backgroundColor: theme.colors.header,
         },
-        headerTintColor: '#fff', // White text
+        headerTintColor: '#fff',
         headerTitleStyle: {
           color: '#fff',
-          fontWeight: 'bold',
+          fontWeight: '700',
+          fontSize: 18,
+          letterSpacing: -0.3,
         },
-        tabBarActiveTintColor: '#6B46C1', // Purple for active tab
-        tabBarInactiveTintColor: '#8E8E93',
-      }}
+        headerRight: () => (
+          <TouchableOpacity
+            onPress={handleLogout}
+            style={{
+              marginRight: theme.spacing.md,
+              paddingHorizontal: theme.spacing.md,
+              paddingVertical: theme.spacing.sm,
+              borderRadius: theme.borderRadius.sm,
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600', letterSpacing: 0.2 }}>
+              Logout
+            </Text>
+          </TouchableOpacity>
+        ),
+        tabBarStyle: {
+          backgroundColor: theme.colors.surface,
+          borderTopColor: theme.colors.border,
+          borderTopWidth: 1,
+          paddingTop: theme.spacing.sm,
+          paddingBottom: theme.spacing.sm,
+          height: 60,
+        },
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.textTertiary,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+        },
+      })}
     >
       <Tab.Screen 
         name="Usage Trends" 
@@ -45,6 +89,13 @@ function DashboardTabs() {
         component={SystemDashboardScreen}
         options={{
           tabBarLabel: 'System Dashboard',
+        }}
+      />
+      <Tab.Screen 
+        name="Settings" 
+        component={SettingsScreen}
+        options={{
+          tabBarLabel: 'Settings',
         }}
       />
     </Tab.Navigator>
@@ -76,10 +127,12 @@ export default function AppNavigator() {
     }
   }, []);
 
+  const theme = useTheme();
+
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
-        <ActivityIndicator size="large" color="#6B46C1" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
   }

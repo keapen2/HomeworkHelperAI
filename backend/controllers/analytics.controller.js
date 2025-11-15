@@ -147,11 +147,11 @@ exports.getSystemDashboard = async (req, res) => {
       return res.json({
         categoryDistribution: mockChartData,
         topQuestions: [
-          { _id: '1', text: 'What are Calculus Derivatives?', askCount: 250 },
-          { _id: '2', text: 'What is the powerhouse of the cell?', askCount: 200 },
-          { _id: '3', text: 'Explain the main causes of WWI', askCount: 180 },
-          { _id: '4', text: 'How do I solve quadratic equations?', askCount: 150 },
-          { _id: '5', text: 'What is a verb?', askCount: 120 }
+          { _id: '1', text: 'What are Calculus Derivatives?', askCount: 250, upvotes: 75 },
+          { _id: '2', text: 'What is the powerhouse of the cell?', askCount: 200, upvotes: 60 },
+          { _id: '3', text: 'Explain the main causes of WWI', askCount: 180, upvotes: 55 },
+          { _id: '4', text: 'How do I solve quadratic equations?', askCount: 150, upvotes: 45 },
+          { _id: '5', text: 'What is a verb?', askCount: 120, upvotes: 35 }
         ]
       });
     }
@@ -232,11 +232,11 @@ exports.getSystemDashboard = async (req, res) => {
     res.json({
       categoryDistribution: mockChartData,
       topQuestions: [
-        { _id: '1', text: 'What are Calculus Derivatives?', askCount: 250 },
-        { _id: '2', text: 'What is the powerhouse of the cell?', askCount: 200 },
-        { _id: '3', text: 'Explain the main causes of WWI', askCount: 180 },
-        { _id: '4', text: 'How do I solve quadratic equations?', askCount: 150 },
-        { _id: '5', text: 'What is a verb?', askCount: 120 }
+        { _id: '1', text: 'What are Calculus Derivatives?', askCount: 250, upvotes: 75 },
+        { _id: '2', text: 'What is the powerhouse of the cell?', askCount: 200, upvotes: 60 },
+        { _id: '3', text: 'Explain the main causes of WWI', askCount: 180, upvotes: 55 },
+        { _id: '4', text: 'How do I solve quadratic equations?', askCount: 150, upvotes: 45 },
+        { _id: '5', text: 'What is a verb?', askCount: 120, upvotes: 35 }
       ]
     });
   }
