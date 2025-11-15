@@ -21,7 +21,15 @@ function DashboardTabs() {
       screenOptions={{
         headerShown: true,
         headerTitle: 'HomeworkHelper AI',
-        tabBarActiveTintColor: '#007AFF',
+        headerStyle: {
+          backgroundColor: '#6B46C1', // Purple header
+        },
+        headerTintColor: '#fff', // White text
+        headerTitleStyle: {
+          color: '#fff',
+          fontWeight: 'bold',
+        },
+        tabBarActiveTintColor: '#6B46C1', // Purple for active tab
         tabBarInactiveTintColor: '#8E8E93',
       }}
     >
@@ -71,7 +79,7 @@ export default function AppNavigator() {
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#6B46C1" />
       </View>
     );
   }

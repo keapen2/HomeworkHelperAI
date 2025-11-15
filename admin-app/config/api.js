@@ -6,8 +6,9 @@
 // To find your IP: ifconfig | grep "inet " | grep -v 127.0.0.1
 
 // Change this to 'localhost' if using iOS Simulator, or your IP if using Expo Go on physical device
-const USE_LOCALHOST = false; // Set to true for iOS Simulator, false for Expo Go on physical device
-const YOUR_IP = '192.168.1.147'; // Your machine's IP address (found via ifconfig)
+// To find your IP: ifconfig | grep "inet " | grep -v 127.0.0.1
+const USE_LOCALHOST = true; // Set to true for iOS Simulator, false for Expo Go on physical device
+const YOUR_IP = '10.169.165.169'; // Your machine's IP address (found via ifconfig) - Update this if your IP changes!
 
 export const API_URL = USE_LOCALHOST 
   ? 'http://localhost:8000'  // For iOS Simulator

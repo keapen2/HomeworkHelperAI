@@ -21,23 +21,72 @@ exports.getUsageTrends = async (req, res) => {
       });
     }
 
-    // 1. Get Active Students (e.g., active in the last 24 hours)
+    // Parse date range from query parameters
+    const { dateRange } = req.query; // '7days', '30days', 'all'
+    let dateFilter = {};
+    
+    if (dateRange === '7days') {
+      dateFilter = { createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } };
+    } else if (dateRange === '30days') {
+      dateFilter = { createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } };
+    }
+    // If 'all' or no dateRange, don't filter by date
+
+    // Parse active students date range
+    let activeStudentsDateFilter = new Date(Date.now() - 24 * 60 * 60 * 1000); // Default: last 24 hours
+    if (dateRange === '7days') {
+      activeStudentsDateFilter = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    } else if (dateRange === '30days') {
+      activeStudentsDateFilter = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    } else if (dateRange === 'all') {
+      activeStudentsDateFilter = new Date(0); // All time
+    }
+
+    // 1. Get Active Students (based on date range)
     const activeStudentCount = await User.countDocuments({
       role: 'student',
-      lastActive: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+      lastActive: { $gte: activeStudentsDateFilter }
     }).maxTimeMS(5000); // 5 second timeout
 
-    // 2. Get Average Accuracy
+    // 2. Get Average Accuracy (with date filter)
+    const avgAccuracyMatch = { 
+      accuracyRating: { $exists: true, $ne: null },
+      ...dateFilter
+    };
     const avgAccuracyResult = await Question.aggregate([
-      { $match: { accuracyRating: { $exists: true, $ne: null } } },
+      { $match: avgAccuracyMatch },
       { $group: { _id: null, average: { $avg: '$accuracyRating' } } }
     ], { maxTimeMS: 5000 }); // 5 second timeout
     const avgAccuracy = avgAccuracyResult.length > 0 ? avgAccuracyResult[0].average : 0;
 
-    // 3. Get Common Study Struggles (Top 5 topics by ask count)
+    // Parse category filter
+    const { category, search } = req.query;
+    let categoryFilter = {};
+    if (category && category !== 'all') {
+      categoryFilter = { subject: category };
+    }
+
+    // Parse search filter
+    let searchFilter = {};
+    if (search && search.trim() !== '') {
+      searchFilter = { 
+        topic: { $regex: search.trim(), $options: 'i' } // Case-insensitive search
+      };
+    }
+
+    // 3. Get Common Study Struggles (Top 5 topics by ask count, with filters)
+    // If searching, get more results (up to 20) to allow better search results
+    const limitCount = search && search.trim() !== '' ? 20 : 5;
+    
+    const struggleMatch = { 
+      topic: { $exists: true, $ne: null },
+      ...dateFilter,
+      ...categoryFilter,
+      ...searchFilter
+    };
     const commonStruggles = await Question.aggregate([
       { 
-        $match: { topic: { $exists: true, $ne: null } } 
+        $match: struggleMatch
       },
       { 
         $group: { 
@@ -49,7 +98,7 @@ exports.getUsageTrends = async (req, res) => {
         $sort: { studentCount: -1 } 
       },
       { 
-        $limit: 5 
+        $limit: limitCount 
       },
       { 
         $project: { 
@@ -107,8 +156,36 @@ exports.getSystemDashboard = async (req, res) => {
       });
     }
 
-    // 1. Get Category Distribution
+    // Parse date range from query parameters
+    const { dateRange } = req.query;
+    let dateFilter = {};
+    
+    if (dateRange === '7days') {
+      dateFilter = { createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } };
+    } else if (dateRange === '30days') {
+      dateFilter = { createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } };
+    }
+
+    // Parse category filter
+    const { category, search } = req.query;
+    let categoryFilter = {};
+    if (category && category !== 'all') {
+      categoryFilter = { subject: category };
+    }
+
+    // Parse search filter for questions
+    let questionSearchFilter = {};
+    if (search && search.trim() !== '') {
+      questionSearchFilter = { 
+        text: { $regex: search.trim(), $options: 'i' } // Case-insensitive search
+      };
+    }
+
+    // 1. Get Category Distribution (with date filter)
     const categoryDistribution = await Question.aggregate([
+      {
+        $match: dateFilter
+      },
       { 
         $group: { 
           _id: '$subject', 
@@ -124,11 +201,19 @@ exports.getSystemDashboard = async (req, res) => {
       }
     ], { maxTimeMS: 5000 }); // 5 second timeout
 
-    // 2. Get Top Questions (Top 5 by askCount/upvotes)
-    const topQuestions = await Question.find()
+    // 2. Get Top Questions (Top 5 by askCount/upvotes, with filters)
+    // If searching, get more results (up to 20) to allow better search results
+    const questionLimit = search && search.trim() !== '' ? 20 : 5;
+    
+    const questionFilters = {
+      ...dateFilter,
+      ...categoryFilter,
+      ...questionSearchFilter
+    };
+    const topQuestions = await Question.find(questionFilters)
       .sort({ askCount: -1 })
-      .limit(5)
-      .select('text askCount upvotes')
+      .limit(questionLimit)
+      .select('text askCount upvotes subject topic')
       .maxTimeMS(5000); // 5 second timeout
 
     res.json({
