@@ -18,16 +18,25 @@ const mongooseOptions = {
 
 const seedData = async () => {
   try {
-    // Check if MONGO_URI is set
-    if (!process.env.MONGO_URI || process.env.MONGO_URI === 'mongodb://localhost:27017/homeworkhelper') {
-      console.error('\n❌ ERROR: MONGO_URI not set in .env file!');
+    // Check if MONGO_URI is set and valid (not a placeholder)
+    const mongoUri = process.env.MONGO_URI;
+    const isPlaceholder = mongoUri && (
+      mongoUri.includes('your_mongodb_atlas_connection_string') ||
+      mongoUri.includes('your_openai_api_key') ||
+      mongoUri.includes('username:password') ||
+      mongoUri === 'mongodb://localhost:27017/homeworkhelper'
+    );
+    
+    if (!mongoUri || isPlaceholder) {
+      console.error('\n❌ ERROR: MONGO_URI not set or is a placeholder in .env file!');
       console.error('\n📝 To fix this:');
       console.error('1. Go to MongoDB Atlas: https://www.mongodb.com/cloud/atlas/register');
       console.error('2. Create a free cluster');
       console.error('3. Get your connection string');
-      console.error('4. Add it to backend/.env file:');
+      console.error('4. Update backend/.env file with your actual connection string:');
       console.error('   MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/homeworkhelper?retryWrites=true&w=majority');
-      console.error('\n💡 For MVP demo, you can skip seeding - the app works with mock data!\n');
+      console.error('\n💡 For MVP demo, you can skip seeding - the app works with mock data!');
+      console.error('   Just comment out or remove MONGO_URI from .env if you don\'t need to seed.\n');
       process.exit(1);
     }
 
