@@ -37,7 +37,7 @@ npm run dev
 
 1. Create Firebase project at https://console.firebase.google.com
 2. Enable Email/Password authentication
-3. Create admin user: `admin@homework.com` / `admin123`
+3. Create admin user: `admin@homework.com` / `admin123`       (ask admin)
 4. Copy Firebase config from Project Settings → General → Web app
 
 ### 3. Frontend Setup
