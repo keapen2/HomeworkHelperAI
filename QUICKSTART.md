@@ -18,7 +18,8 @@ npm install
 
 Create `.env` file:
 ```env
-MONGO_URI=your-mongodb-atlas-connection-string (ask admin)
+MONGO_URI=mongodb+srv://kiraneapen2006_db_user:admin123@cluster0.zpngkg2.mongodb.net/homeworkhelper?retryWrites=true&w=majority
+
 PORT=8000
 ```
 

@@ -14,9 +14,12 @@ import {
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { useTheme } from '../context/ThemeContext';
+import { useToast } from '../context/ToastContext';
+import { triggerHaptic } from '../utils/haptics';
 
 export default function AdminLoginScreen({ navigation }) {
   const theme = useTheme();
+  const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,13 +42,16 @@ export default function AdminLoginScreen({ navigation }) {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      triggerHaptic('success');
+      toast.showSuccess('Login successful!');
       // Clear fields after successful login
       setEmail('');
       setPassword('');
       // Navigation to dashboard is handled by AppNavigator's auth state change
     } catch (error) {
       console.error('Login error:', error);
-      Alert.alert('Login Failed', error.message || 'Invalid credentials');
+      triggerHaptic('error');
+      toast.showError(error.message || 'Invalid credentials');
     } finally {
       setLoading(false);
     }
@@ -55,6 +61,7 @@ export default function AdminLoginScreen({ navigation }) {
     <KeyboardAvoidingView 
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
       <View style={styles.content}>
         <View style={styles.logoContainer}>

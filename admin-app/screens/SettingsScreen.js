@@ -10,17 +10,22 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from '../config/firebase';
 import { signOut } from 'firebase/auth';
 import { useTheme } from '../context/ThemeContext';
+import { useToast } from '../context/ToastContext';
+import { triggerHaptic } from '../utils/haptics';
 
 export default function SettingsScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const toast = useToast();
   const [user, setUser] = useState(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   
-  const styles = getStyles(theme);
+  const styles = getStyles(theme, insets);
 
   useEffect(() => {
     const currentUser = auth.currentUser;
@@ -42,10 +47,13 @@ export default function SettingsScreen() {
           onPress: async () => {
             setLoading(true);
             try {
+              triggerHaptic('medium');
               await signOut(auth);
+              toast.showSuccess('Logged out successfully');
             } catch (error) {
               console.error('Logout error:', error);
-              Alert.alert('Error', 'Failed to logout. Please try again.');
+              triggerHaptic('error');
+              toast.showError('Failed to logout. Please try again.');
               setLoading(false);
             }
           },
@@ -95,7 +103,11 @@ export default function SettingsScreen() {
           </View>
           <Switch
             value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
+            onValueChange={(value) => {
+              triggerHaptic('light');
+              setNotificationsEnabled(value);
+              toast.showInfo(value ? 'Notifications enabled' : 'Notifications disabled');
+            }}
             trackColor={{ false: '#E5E7EB', true: '#6B46C1' }}
             thumbColor="#fff"
           />
@@ -108,7 +120,11 @@ export default function SettingsScreen() {
           </View>
           <Switch
             value={theme.isDarkMode}
-            onValueChange={theme.toggleTheme}
+            onValueChange={(value) => {
+              triggerHaptic('light');
+              theme.toggleTheme();
+              toast.showInfo(value ? 'Dark mode enabled' : 'Light mode enabled');
+            }}
             trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
             thumbColor="#fff"
           />
@@ -157,56 +173,57 @@ export default function SettingsScreen() {
   );
 }
 
-const getStyles = (theme) => StyleSheet.create({
+const getStyles = (theme, insets) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
   },
   contentContainer: {
-    paddingBottom: theme.spacing.xl,
+    paddingBottom: Math.max(insets.bottom, theme.spacing.xl) + theme.spacing.xl,
   },
   header: {
     backgroundColor: theme.colors.header,
     paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xl,
+    paddingTop: insets.top + theme.spacing.lg,
     paddingBottom: theme.spacing.lg,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700',
     color: '#fff',
-    letterSpacing: -0.5,
+    letterSpacing: -0.8,
   },
   section: {
     backgroundColor: theme.colors.surface,
-    marginTop: theme.spacing.lg,
-    marginHorizontal: theme.spacing.md,
-    borderRadius: theme.borderRadius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    marginTop: 0,
+    marginHorizontal: 0,
+    borderRadius: 0,
+    borderWidth: 0,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: theme.colors.borderLight,
     overflow: 'hidden',
     shadowColor: theme.colors.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 1,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: theme.colors.text,
-    paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.md,
+    borderBottomWidth: 0,
   },
   settingItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.borderLight,
   },
@@ -246,17 +263,17 @@ const getStyles = (theme) => StyleSheet.create({
   },
   logoutButton: {
     backgroundColor: theme.colors.error,
-    paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
-    marginHorizontal: theme.spacing.md,
-    marginTop: theme.spacing.md,
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.lg,
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.lg,
     alignItems: 'center',
     shadowColor: theme.colors.error,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   logoutButtonDisabled: {
     backgroundColor: theme.colors.textTertiary,
