@@ -62,7 +62,7 @@ const firebaseConfig = {
 ### 4. Run the App
 
 ```bash
-npm start
+`npm start`
 ```
 
 Press `i` for iOS Simulator (Mac) or `a` for Android Emulator.

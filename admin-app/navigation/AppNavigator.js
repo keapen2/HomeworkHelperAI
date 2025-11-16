@@ -9,9 +9,11 @@ import { auth } from '../config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 import AdminLoginScreen from '../screens/AdminLoginScreen';
+import LoginScreen from '../screens/LoginScreen';
 import UsageTrendsScreen from '../screens/UsageTrendsScreen';
 import SystemDashboardScreen from '../screens/SystemDashboardScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import UserNavigator from './UserNavigator';
 import { signOut } from 'firebase/auth';
 import { TouchableOpacity, Text } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
@@ -118,14 +120,55 @@ function DashboardTabs() {
 
 export default function AppNavigator() {
   const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null); // 'admin' or 'student'
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     try {
       const subscriber = onAuthStateChanged(
         auth,
-        (user) => {
+        async (user) => {
           setUser(user);
+          
+          // Check user role from token claims or email
+          if (user) {
+            try {
+              const token = await user.getIdTokenResult(true); // Force refresh to get latest claims
+              const isAdmin = token.claims.admin === true;
+              const roleFromClaim = token.claims.role;
+              
+              // Email-based role determination (fallback if claims not set)
+              const adminEmails = ['kiraneapen2006@gmail.com'];
+              const userEmails = ['nateandbros@gmail.com'];
+              const userEmail = user.email?.toLowerCase();
+              
+              let role;
+              if (roleFromClaim) {
+                role = roleFromClaim;
+              } else if (isAdmin) {
+                role = 'admin';
+              } else if (adminEmails.includes(userEmail)) {
+                role = 'admin';
+              } else if (userEmails.includes(userEmail)) {
+                role = 'student';
+              } else {
+                // Default to student if can't determine
+                role = 'student';
+              }
+              
+              console.log('AppNavigator - User email:', userEmail, 'Role:', role);
+              setUserRole(role);
+            } catch (error) {
+              console.error('Error getting user role:', error);
+              // Fallback to email check
+              const adminEmails = ['kiraneapen2006@gmail.com'];
+              const userEmail = user.email?.toLowerCase();
+              setUserRole(adminEmails.includes(userEmail) ? 'admin' : 'student');
+            }
+          } else {
+            setUserRole(null);
+          }
+          
           setLoading(false);
         },
         (error) => {
@@ -155,9 +198,14 @@ export default function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
-          <Stack.Screen name="Dashboard" component={DashboardTabs} />
+          // Route based on user role
+          userRole === 'admin' ? (
+            <Stack.Screen name="AdminDashboard" component={DashboardTabs} />
+          ) : (
+            <Stack.Screen name="UserDashboard" component={UserNavigator} />
+          )
         ) : (
-          <Stack.Screen name="Login" component={AdminLoginScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
         )}
       </Stack.Navigator>
     </NavigationContainer>

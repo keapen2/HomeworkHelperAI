@@ -1,17 +1,22 @@
 // routes/student.routes.js
-// These are stub endpoints for context with other team members' features
+// Student routes for AI question feature and user functionality
 
 const express = require('express');
 const router = express.Router();
+const { generateAIResponse } = require('../controllers/ai.controller');
+const { getMyQuestions, getCommunityQuestions, getFeaturedQuestions } = require('../controllers/history.controller');
+const { verifyUser } = require('../middleware/auth.middleware');
 
-// CONTEXT: Oluwakunmi's feature will use this
-router.post('/question', (req, res) => {
-  res.status(201).json({ message: 'STUB: AI question submitted' });
-  // TODO: This endpoint will eventually:
-  // 1. Take `text` and `subject` from req.body
-  // 2. Call OpenAI API
-  // 3. Save to MongoDB 'questions' collection, which feeds the admin dashboards
-});
+// Apply verifyUser middleware to all routes (allows both authenticated and guest access)
+router.use(verifyUser);
+
+// AI Question endpoint - Oluwakunmi's feature
+router.post('/question', generateAIResponse);
+
+// History endpoints
+router.get('/questions/my', getMyQuestions);
+router.get('/questions/community', getCommunityQuestions);
+router.get('/questions/featured', getFeaturedQuestions);
 
 // CONTEXT: Kanda's feature will use this
 router.post('/question/:id/upvote', (req, res) => {

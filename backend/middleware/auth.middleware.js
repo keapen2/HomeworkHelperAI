@@ -33,3 +33,36 @@ exports.verifyAdmin = async (req, res, next) => {
   }
 };
 
+/**
+ * Verify user (admin or student) - more permissive than verifyAdmin
+ */
+exports.verifyUser = async (req, res, next) => {
+  // Skip auth check if Firebase Admin is not initialized (for development/testing)
+  if (!admin.apps || admin.apps.length === 0) {
+    console.warn('Firebase Admin not initialized - skipping auth check');
+    req.user = { uid: 'dev-user', role: 'student' }; // Mock user for development
+    return next();
+  }
+
+  const idToken = req.headers.authorization?.split('Bearer ')[1];
+  
+  if (!idToken) {
+    // Allow unauthenticated requests but mark user as null
+    req.user = null;
+    return next();
+  }
+
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    
+    // Determine role based on admin claim
+    decodedToken.role = decodedToken.admin === true ? 'admin' : 'student';
+    req.user = decodedToken;
+    return next();
+  } catch (error) {
+    console.error('Auth error:', error);
+    // For user endpoints, allow unauthenticated requests (guest mode)
+    req.user = null;
+    return next();
+  }
+};
