@@ -1,5 +1,5 @@
 // screens/UsageTrendsScreen.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -10,19 +10,28 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Modal
+  Modal,
+  Dimensions
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from '../config/firebase';
 import axios from 'axios';
 import API_URL from '../config/api';
 import DetailModal from '../components/DetailModal';
 import { useTheme } from '../context/ThemeContext';
-import { Dimensions } from 'react-native';
+import { useToast } from '../context/ToastContext';
+import { triggerHaptic } from '../utils/haptics';
+import { useDebounce } from '../hooks/useDebounce';
+import SkeletonLoader, { SkeletonCard, SkeletonList } from '../components/SkeletonLoader';
+import EmptyState from '../components/EmptyState';
 
 const screenWidth = Dimensions.get('window').width;
 
 export default function UsageTrendsScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
+  const toast = useToast();
+  const debouncedSearchQuery = useDebounce(searchQuery, 400);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -45,7 +54,7 @@ export default function UsageTrendsScreen() {
   const [struggleSortBy, setStruggleSortBy] = useState('studentCount'); // 'studentCount', 'alphabetical'
   const [struggleSortOrder, setStruggleSortOrder] = useState('desc'); // 'asc', 'desc'
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const user = auth.currentUser;
       let headers = {
@@ -73,7 +82,7 @@ export default function UsageTrendsScreen() {
         params.append('dateRange', dateRange);
       }
       if (category && category !== 'all') params.append('category', category);
-      if (searchQuery && searchQuery.trim() !== '') params.append('search', searchQuery.trim());
+      if (debouncedSearchQuery && debouncedSearchQuery.trim() !== '') params.append('search', debouncedSearchQuery.trim());
 
       const res = await axios.get(`${API_URL}/api/analytics/usage-trends?${params.toString()}`, {
         headers,
@@ -81,10 +90,12 @@ export default function UsageTrendsScreen() {
       });
       setData(res.data);
     } catch (error) {
-      // Silently fall back to mock data - don't show error if it's a network/database issue
+      // Show toast for errors
       if (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK' || error.response?.status === 500) {
+        toast.showWarning('Using offline data');
         console.warn('API unavailable, using mock data');
       } else {
+        toast.showError('Failed to load data');
         console.error('Failed to fetch usage trends:', error.response?.data || error.message);
       }
       // Always set mock data on error - backend should return mock data too
@@ -104,9 +115,9 @@ export default function UsageTrendsScreen() {
         filteredMockStruggles = mockStruggles.filter(s => s.category === category);
       }
 
-      // Filter by search query
-      if (searchQuery && searchQuery.trim() !== '') {
-        const query = searchQuery.toLowerCase().trim();
+      // Filter by search query (use debounced value)
+      if (debouncedSearchQuery && debouncedSearchQuery.trim() !== '') {
+        const query = debouncedSearchQuery.toLowerCase().trim();
         filteredMockStruggles = filteredMockStruggles.filter(s => 
           s.topic.toLowerCase().includes(query)
         );
@@ -121,25 +132,108 @@ export default function UsageTrendsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [dateRange, category, debouncedSearchQuery, customStartDate, customEndDate, toast]);
 
   useEffect(() => {
     fetchData();
-  }, [dateRange, category, searchQuery]); // Refetch when filters or search change
+  }, [fetchData]); // Refetch when filters or debounced search change
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(async () => {
+    triggerHaptic('light');
     setRefreshing(true);
-    fetchData();
-  };
+    await fetchData();
+    toast.showSuccess('Data refreshed');
+  }, [fetchData, toast]);
 
-  const styles = getStyles(theme);
+  // Immediate search function that uses current searchQuery (bypasses debounce)
+  const handleImmediateSearch = useCallback(async () => {
+    triggerHaptic('light');
+    try {
+      const user = auth.currentUser;
+      let headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (user) {
+        try {
+          const token = await user.getIdToken();
+          headers.Authorization = `Bearer ${token}`;
+        } catch (authError) {
+          console.warn('Could not get auth token, trying without auth:', authError.message);
+        }
+      }
+
+      // Build query params with current searchQuery (not debounced)
+      const params = new URLSearchParams();
+      if (dateRange === 'custom') {
+        params.append('startDate', customStartDate.toISOString().split('T')[0]);
+        params.append('endDate', customEndDate.toISOString().split('T')[0]);
+      } else if (dateRange) {
+        params.append('dateRange', dateRange);
+      }
+      if (category && category !== 'all') params.append('category', category);
+      if (searchQuery && searchQuery.trim() !== '') params.append('search', searchQuery.trim());
+
+      const res = await axios.get(`${API_URL}/api/analytics/usage-trends?${params.toString()}`, {
+        headers,
+        timeout: 10000
+      });
+      setData(res.data);
+    } catch (error) {
+      // Fall back to mock data with current searchQuery
+      const mockStruggles = [
+        { topic: 'Calculus Derivatives', studentCount: 250, category: 'Math' },
+        { topic: 'Biology', studentCount: 200, category: 'Science' },
+        { topic: 'Algebra', studentCount: 150, category: 'Math' },
+        { topic: 'World War I', studentCount: 180, category: 'History' },
+        { topic: 'Grammar', studentCount: 120, category: 'English' }
+      ];
+
+      let filteredMockStruggles = mockStruggles;
+
+      if (category && category !== 'all') {
+        filteredMockStruggles = mockStruggles.filter(s => s.category === category);
+      }
+
+      // Use current searchQuery (not debounced)
+      if (searchQuery && searchQuery.trim() !== '') {
+        const query = searchQuery.toLowerCase().trim();
+        filteredMockStruggles = filteredMockStruggles.filter(s => 
+          s.topic.toLowerCase().includes(query)
+        );
+      }
+
+      setData({
+        activeStudents: 3,
+        avgAccuracy: 85,
+        commonStruggles: filteredMockStruggles
+      });
+    }
+  }, [dateRange, category, searchQuery, customStartDate, customEndDate]);
+
+  const styles = getStyles(theme, insets);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={styles.loadingText}>Loading usage trends...</Text>
-      </View>
+      <ScrollView 
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+      >
+        <View style={styles.header}>
+          <SkeletonLoader type="text" width="60%" height={32} style={{ marginBottom: theme.spacing.md }} />
+          <SkeletonLoader type="text" width="80%" height={24} style={{ marginBottom: theme.spacing.xl }} />
+        </View>
+        <View style={styles.cardContainer}>
+          <SkeletonCard style={{ flex: 1, marginRight: theme.spacing.sm }} />
+          <SkeletonCard style={{ flex: 1, marginLeft: theme.spacing.sm }} />
+        </View>
+        <View style={styles.sectionHeaderContainer}>
+          <SkeletonLoader type="text" width="50%" height={24} />
+        </View>
+        <View style={{ paddingHorizontal: theme.spacing.lg }}>
+          <SkeletonList count={5} />
+        </View>
+      </ScrollView>
     );
   }
 
@@ -148,8 +242,15 @@ export default function UsageTrendsScreen() {
       style={styles.container}
       contentContainerStyle={styles.contentContainer}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        <RefreshControl 
+          refreshing={refreshing} 
+          onRefresh={onRefresh}
+          tintColor={theme.colors.primary}
+          colors={[theme.colors.primary]}
+        />
       }
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Usage Trends</Text>
@@ -160,7 +261,11 @@ export default function UsageTrendsScreen() {
           <View style={styles.filterButtons}>
             <TouchableOpacity
               style={[styles.filterButton, dateRange === '7days' && styles.filterButtonActive]}
-              onPress={() => setDateRange('7days')}
+              onPress={() => {
+                triggerHaptic('light');
+                setDateRange('7days');
+                toast.showInfo('Filtered to last 7 days');
+              }}
             >
               <Text style={[styles.filterButtonText, dateRange === '7days' && styles.filterButtonTextActive]}>
                 7 Days
@@ -168,7 +273,11 @@ export default function UsageTrendsScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.filterButton, dateRange === '30days' && styles.filterButtonActive]}
-              onPress={() => setDateRange('30days')}
+              onPress={() => {
+                triggerHaptic('light');
+                setDateRange('30days');
+                toast.showInfo('Filtered to last 30 days');
+              }}
             >
               <Text style={[styles.filterButtonText, dateRange === '30days' && styles.filterButtonTextActive]}>
                 30 Days
@@ -176,7 +285,11 @@ export default function UsageTrendsScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.filterButton, dateRange === 'all' && styles.filterButtonActive]}
-              onPress={() => setDateRange('all')}
+              onPress={() => {
+                triggerHaptic('light');
+                setDateRange('all');
+                toast.showInfo('Showing all time');
+              }}
             >
               <Text style={[styles.filterButtonText, dateRange === 'all' && styles.filterButtonTextActive]}>
                 All Time
@@ -184,7 +297,10 @@ export default function UsageTrendsScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.filterButton, dateRange === 'custom' && styles.filterButtonActive]}
-              onPress={() => setShowDatePicker(true)}
+              onPress={() => {
+                triggerHaptic('light');
+                setShowDatePicker(true);
+              }}
             >
               <Text style={[styles.filterButtonText, dateRange === 'custom' && styles.filterButtonTextActive]}>
                 Custom
@@ -245,11 +361,13 @@ export default function UsageTrendsScreen() {
             <TouchableOpacity
               style={styles.clearFiltersButton}
               onPress={() => {
+                triggerHaptic('medium');
                 setDateRange('7days');
                 setCategory('all');
                 setSearchQuery('');
                 setStruggleSortBy('studentCount');
                 setStruggleSortOrder('desc');
+                toast.showSuccess('Filters cleared');
               }}
             >
               <Text style={styles.clearFiltersText}>Clear All Filters</Text>
@@ -262,7 +380,10 @@ export default function UsageTrendsScreen() {
       <View style={styles.cardContainer}>
         <TouchableOpacity 
           style={styles.statCard}
-          onPress={() => setSelectedStatCard('activeStudents')}
+          onPress={() => {
+            triggerHaptic('selection');
+            setSelectedStatCard('activeStudents');
+          }}
           activeOpacity={0.7}
         >
           <Text style={styles.statLabel}>Active Students</Text>
@@ -278,7 +399,10 @@ export default function UsageTrendsScreen() {
         
         <TouchableOpacity 
           style={styles.statCard}
-          onPress={() => setSelectedStatCard('avgAccuracy')}
+          onPress={() => {
+            triggerHaptic('selection');
+            setSelectedStatCard('avgAccuracy');
+          }}
           activeOpacity={0.7}
         >
           <Text style={styles.statLabel}>Avg. Accuracy</Text>
@@ -301,10 +425,7 @@ export default function UsageTrendsScreen() {
           placeholderTextColor={theme.colors.textTertiary}
           value={searchQuery}
           onChangeText={setSearchQuery}
-          onSubmitEditing={() => {
-            // Trigger refetch when user presses Enter
-            fetchData();
-          }}
+          onSubmitEditing={handleImmediateSearch}
           returnKeyType="search"
           blurOnSubmit={true}
         />
@@ -319,6 +440,7 @@ export default function UsageTrendsScreen() {
             <TouchableOpacity
               style={[styles.sortButton, struggleSortBy === 'studentCount' && styles.sortButtonActive]}
               onPress={() => {
+                triggerHaptic('light');
                 if (struggleSortBy === 'studentCount') {
                   setStruggleSortOrder(struggleSortOrder === 'asc' ? 'desc' : 'asc');
                 } else {
@@ -334,6 +456,7 @@ export default function UsageTrendsScreen() {
             <TouchableOpacity
               style={[styles.sortButton, struggleSortBy === 'alphabetical' && styles.sortButtonActive]}
               onPress={() => {
+                triggerHaptic('light');
                 if (struggleSortBy === 'alphabetical') {
                   setStruggleSortOrder(struggleSortOrder === 'asc' ? 'desc' : 'asc');
                 } else {
@@ -363,12 +486,19 @@ export default function UsageTrendsScreen() {
           
           return struggleSortOrder === 'asc' ? comparison : -comparison;
         })}
-        keyExtractor={(item, index) => item.topic || index.toString()}
+        keyExtractor={(item, index) => item.topic || `struggle-${index}`}
         scrollEnabled={false}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        initialNumToRender={10}
         renderItem={({ item, index }) => (
           <TouchableOpacity 
             style={styles.listItem}
-            onPress={() => setSelectedStruggle(item)}
+            onPress={() => {
+              triggerHaptic('selection');
+              setSelectedStruggle(item);
+            }}
             activeOpacity={0.7}
           >
             <View style={styles.listItemLeft}>
@@ -378,11 +508,19 @@ export default function UsageTrendsScreen() {
             <Text style={styles.listItemCount}>{item.studentCount || 0} students</Text>
           </TouchableOpacity>
         )}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No data available</Text>
-          </View>
-        }
+        ListEmptyComponent={() => (
+          <EmptyState
+            icon="📈"
+            title="No Struggles Found"
+            description="No study struggles match your current filters. Try adjusting your search or filters."
+            actionLabel="Clear Filters"
+            onAction={() => {
+              setCategory('all');
+              setSearchQuery('');
+              toast.showInfo('Filters cleared');
+            }}
+          />
+        )}
       />
 
       {/* Stat Card Detail Modal */}
@@ -655,13 +793,13 @@ export default function UsageTrendsScreen() {
   );
 }
 
-const getStyles = (theme) => StyleSheet.create({
+const getStyles = (theme, insets) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
   },
   contentContainer: {
-    paddingBottom: theme.spacing.xl,
+    paddingBottom: Math.max(insets.bottom, theme.spacing.xl) + theme.spacing.xl,
   },
   loadingContainer: {
     flex: 1,
@@ -679,17 +817,17 @@ const getStyles = (theme) => StyleSheet.create({
   },
   header: {
     paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xl,
+    paddingTop: insets.top + theme.spacing.lg,
     paddingBottom: theme.spacing.lg,
     backgroundColor: theme.colors.header,
     borderBottomWidth: 0,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700',
     color: '#fff',
-    marginBottom: theme.spacing.md,
-    letterSpacing: -0.5,
+    marginBottom: theme.spacing.lg,
+    letterSpacing: -0.8,
   },
   filterContainer: {
     marginBottom: theme.spacing.md,
@@ -704,20 +842,21 @@ const getStyles = (theme) => StyleSheet.create({
   filterButtons: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    marginHorizontal: -theme.spacing.xs,
   },
   filterButton: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    marginRight: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 0,
+    marginHorizontal: theme.spacing.xs,
     marginBottom: theme.spacing.sm,
+    minHeight: 40,
   },
   filterButtonActive: {
     backgroundColor: '#fff',
-    borderColor: '#fff',
+    borderWidth: 0,
   },
   filterButtonText: {
     fontSize: 13,
@@ -748,23 +887,25 @@ const getStyles = (theme) => StyleSheet.create({
   cardContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginVertical: 20,
-    paddingHorizontal: 10,
+    marginVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    gap: theme.spacing.md,
   },
   statCard: {
     flex: 1,
     padding: theme.spacing.lg,
-    margin: theme.spacing.xs,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.borderRadius.lg,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 0,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: theme.colors.borderLight,
     shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.03,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 1,
   },
   modalStatBox: {
     backgroundColor: '#F3E8FF', // Light purple background
@@ -883,32 +1024,34 @@ const getStyles = (theme) => StyleSheet.create({
   },
   searchContainer: {
     paddingHorizontal: theme.spacing.lg,
-    marginVertical: theme.spacing.md,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
   },
   searchInput: {
     backgroundColor: theme.colors.inputBackground,
-    borderRadius: theme.borderRadius.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md + 2,
     fontSize: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.inputBorder,
+    borderWidth: 0,
     color: theme.colors.text,
+    shadowColor: theme.colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sectionHeaderContainer: {
-    marginHorizontal: theme.spacing.lg,
-    marginTop: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.xl,
     marginBottom: theme.spacing.md,
   },
   sectionHeader: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
-    color: theme.colors.primary,
+    color: theme.colors.text,
     marginBottom: theme.spacing.sm,
-    letterSpacing: -0.3,
-    textShadowColor: theme.isDarkMode ? 'rgba(0, 0, 0, 0.8)' : 'transparent',
-    textShadowOffset: theme.isDarkMode ? { width: 0, height: 1 } : { width: 0, height: 0 },
-    textShadowRadius: theme.isDarkMode ? 3 : 0,
+    letterSpacing: -0.5,
   },
   sortContainer: {
     marginTop: 8,
@@ -918,22 +1061,22 @@ const getStyles = (theme) => StyleSheet.create({
     flexWrap: 'wrap',
   },
   sortButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: '#f0f0f0',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    marginRight: 8,
-    marginBottom: 6,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm + 2,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.borderLight,
+    borderWidth: 0,
+    marginRight: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    minHeight: 36,
   },
   sortButtonActive: {
-    backgroundColor: '#6B46C1',
-    borderColor: '#6B46C1',
+    backgroundColor: theme.colors.primary,
+    borderWidth: 0,
   },
   sortButtonText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: theme.colors.textSecondary,
     fontWeight: '600',
   },
   sortButtonTextActive: {
@@ -943,19 +1086,14 @@ const getStyles = (theme) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-    marginHorizontal: theme.spacing.md,
-    marginVertical: 3,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.lg,
+    marginHorizontal: 0,
+    marginVertical: 0,
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    shadowColor: theme.colors.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+    borderWidth: 0,
   },
   listItemLeft: {
     flexDirection: 'row',
